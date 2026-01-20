@@ -90,7 +90,7 @@
 
         // --- Main Component ---
         const SequenceTimer = () => {
-            const [inputString, setInputString] = useState("10s, 1m (Work), 10s, 1m (Rest)");
+            const [inputString, setInputString] = useState("10s (Warm-up), 1m (Work), 1m (Rest)");
             const [timers, setTimers] = useState([]);
             const [currentIndex, setCurrentIndex] = useState(0);
             const [isRunning, setIsRunning] = useState(false);
@@ -307,7 +307,6 @@
                                 <Clock className="w-8 h-8" />
                                 Sequence Timer
                             </h1>
-                            <p className="text-slate-400">Chain timers with custom labels.</p>
                         </div>
 
                         {/* Controls Section */}
@@ -333,7 +332,7 @@
                             {/* Input Box */}
                             <div className="bg-slate-800 rounded-2xl p-6 shadow-xl border border-slate-700">
                                 <label className="block text-sm font-medium text-slate-400 mb-2">
-                                    Timer Sequence
+                                    Input time in s, m or h for each timer, separated by commas (with labels in parentheses).
                                 </label>
                                 <div className="flex gap-2 flex-col sm:flex-row">
                                     <input
@@ -357,9 +356,6 @@
                                     {error}
                                     </div>
                                 )}
-                                <p className="mt-3 text-xs text-slate-500">
-                                    Format: <span className="font-mono text-slate-400">Time (Label)</span>. Example: <span className="font-mono text-slate-400">45s (Sprint), 2m (Jog)</span>
-                                </p>
                             </div>
                         </div>
 
@@ -382,12 +378,12 @@
                                 <div className="h-8 flex items-center justify-center">
                                 {timers[currentIndex] ? (
                                     timers[currentIndex].label ? (
-                                        <span className="text-xl md:text-2xl font-semibold text-blue-200">
+                                        <span className="text-xl md:text-5xl font-semibold text-blue-200">
                                             {timers[currentIndex].label}
                                         </span>
                                     ) : (
                                         <span className="text-slate-400 text-lg">
-                                            {timers[currentIndex].originalText}
+
                                         </span>
                                     )
                                 ) : (
