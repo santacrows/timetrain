@@ -93,6 +93,37 @@
                 <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M9 5h4"></path><path d="M3 7h4"></path>
             </Icon>
         );
+        const Wind = ({ className }) => (
+            <Icon className={className}>
+                <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2" />
+                <path d="M9.6 4.6A2 2 0 1 1 11 8H2" />
+                <path d="M12.6 19.4A2 2 0 1 0 14 16H2" />
+            </Icon>
+        );
+        const Volume2 = ({ className }) => (
+            <Icon className={className}>
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            </Icon>
+        );
+        const Bell = ({ className }) => (
+            <Icon className={className}>
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
+            </Icon>
+        );
+        const ToggleLeft = ({ className }) => (
+            <Icon className={className}>
+                <rect width="20" height="12" x="2" y="6" rx="6" ry="6"></rect>
+                <circle cx="8" cy="12" r="2"></circle>
+            </Icon>
+        );
+        const ToggleRight = ({ className }) => (
+            <Icon className={className}>
+                <rect width="20" height="12" x="2" y="6" rx="6" ry="6"></rect>
+                <circle cx="16" cy="12" r="2"></circle>
+            </Icon>
+        );
 
 
         // --- Main Component ---
@@ -103,10 +134,13 @@
             const [isRunning, setIsRunning] = useState(false);
             const [timeLeft, setTimeLeft] = useState(0);
             const [error, setError] = useState("");
+            const [countdownEnabled, setCountdownEnabled] = useState(true);
+            const [toneType, setToneType] = useState('standard'); // 'standard', 'zen', 'retro'
             
             const intervalRef = useRef(null);
             const audioCtxRef = useRef(null);
             const endTimeRef = useRef(null);
+            const lastSecondRef = useRef(null); // Track last second played for countdown
 
             const parseDuration = (str) => {
                 const regex = /(\d+)\s*(h|m|s)/g;
@@ -148,7 +182,7 @@
                 const groupRegex = /\[([^\]]+)\]\s*[xX*]\s*(\d+)/g;
                 
                 let iterations = 0;
-                while (expandedStr.match(groupRegex) && iterations < 10) { // Limit iterations to prevent infinite loops on malformed inputs
+                while (expandedStr.match(groupRegex) && iterations < 10) { 
                     expandedStr = expandedStr.replace(groupRegex, (match, content, count) => {
                         const repetitions = parseInt(count, 10);
                         if (isNaN(repetitions) || repetitions <= 0) return "";
@@ -201,7 +235,7 @@
                 }
             };
 
-            const playBeep = () => {
+            const playSound = (type) => {
                 if (!audioCtxRef.current) return;
                 
                 const ctx = audioCtxRef.current;
@@ -211,15 +245,47 @@
                 osc.connect(gain);
                 gain.connect(ctx.destination);
 
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(1046.5, ctx.currentTime + 0.1);
+                const now = ctx.currentTime;
 
-                gain.gain.setValueAtTime(0.3, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
+                if (type === 'chirp') {
+                    // Short, quiet chirp for countdown
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, now);
+                    gain.gain.setValueAtTime(0.05, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                    return;
+                }
 
-                osc.start();
-                osc.stop(ctx.currentTime + 0.5);
+                // Main Beeps
+                if (toneType === 'standard') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, now);
+                    osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.1);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+                    osc.start(now);
+                    osc.stop(now + 0.5);
+                } 
+                else if (toneType === 'zen') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(220, now); // A3
+                    osc.frequency.linearRampToValueAtTime(440, now + 0.05); // A4
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5); // Long fade
+                    osc.start(now);
+                    osc.stop(now + 1.5);
+                }
+                else if (toneType === 'retro') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(440, now);
+                    osc.frequency.setValueAtTime(880, now + 0.1);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                }
             };
 
             const toggleTimer = () => {
@@ -240,6 +306,7 @@
             const reset = () => {
                 setIsRunning(false);
                 setCurrentIndex(0);
+                lastSecondRef.current = null;
                 if (timers.length > 0) {
                     setTimeLeft(timers[0].duration);
                 }
@@ -248,19 +315,31 @@
             useEffect(() => {
                 if (isRunning && currentIndex < timers.length) {
                     endTimeRef.current = Date.now() + timeLeft * 1000;
+                    lastSecondRef.current = timeLeft; 
 
                     intervalRef.current = setInterval(() => {
                         const now = Date.now();
                         const distance = endTimeRef.current - now;
+                        const currentSec = Math.ceil(distance / 1000);
+
+                        // Countdown Chirp Logic
+                        if (countdownEnabled && currentSec <= 5 && currentSec > 0) {
+                            // Only chirp if we've crossed a second boundary
+                            if (currentSec !== lastSecondRef.current) {
+                                playSound('chirp');
+                                lastSecondRef.current = currentSec;
+                            }
+                        }
 
                         if (distance <= 0) {
-                            playBeep();
+                            playSound('main');
                             const nextIndex = currentIndex + 1;
                             
                             if (nextIndex < timers.length) {
                                 setCurrentIndex(nextIndex);
                                 const nextDuration = timers[nextIndex].duration;
                                 setTimeLeft(nextDuration);
+                                lastSecondRef.current = nextDuration;
                                 endTimeRef.current = now + nextDuration * 1000;
                             } else {
                                 setTimeLeft(0);
@@ -269,7 +348,10 @@
                                 clearInterval(intervalRef.current);
                             }
                         } else {
-                            setTimeLeft(Math.ceil(distance / 1000));
+                            setTimeLeft(currentSec);
+                            if (currentSec !== lastSecondRef.current) {
+                                lastSecondRef.current = currentSec;
+                            }
                         }
                     }, 100);
                 } else {
@@ -277,7 +359,7 @@
                 }
 
                 return () => clearInterval(intervalRef.current);
-            }, [isRunning, currentIndex, timers]);
+            }, [isRunning, currentIndex, timers, countdownEnabled, toneType]); // Dependencies for tone/countdown changes
 
             useEffect(() => {
                 processSequence(inputString);
@@ -302,6 +384,56 @@
                 return Math.min(100, Math.max(0, progress));
             };
 
+            const cycleTone = () => {
+                initAudio();
+                const tones = ['standard', 'zen', 'retro'];
+                const nextIndex = (tones.indexOf(toneType) + 1) % tones.length;
+                const newTone = tones[nextIndex];
+                setToneType(newTone);
+                
+                // Preview new tone
+                // Need a slight delay or detached context call to avoid render loop issues, 
+                // but direct call here is fine as it's a user interaction
+                setTimeout(() => {
+                     // Temp mock to reuse playSound logic but we need to pass the NEW type
+                     // We can't use playSound() directly because state hasn't updated in this closure yet
+                     // So we reconstruct the sound just for preview
+                     if (!audioCtxRef.current) return;
+                     const ctx = audioCtxRef.current;
+                     const osc = ctx.createOscillator();
+                     const gain = ctx.createGain();
+                     osc.connect(gain);
+                     gain.connect(ctx.destination);
+                     const now = ctx.currentTime;
+                     
+                     if (newTone === 'standard') {
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(523.25, now);
+                        osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.1);
+                        gain.gain.setValueAtTime(0.3, now);
+                        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+                        osc.start(now);
+                        osc.stop(now + 0.5);
+                     } else if (newTone === 'zen') {
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(220, now); 
+                        osc.frequency.linearRampToValueAtTime(440, now + 0.05); 
+                        gain.gain.setValueAtTime(0.2, now);
+                        gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5); 
+                        osc.start(now);
+                        osc.stop(now + 1.5);
+                     } else if (newTone === 'retro') {
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(440, now);
+                        osc.frequency.setValueAtTime(880, now + 0.1);
+                        gain.gain.setValueAtTime(0.1, now);
+                        gain.gain.linearRampToValueAtTime(0, now + 0.3);
+                        osc.start(now);
+                        osc.stop(now + 0.3);
+                     }
+                }, 100);
+            };
+
             return (
                 <div className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8 font-mono selection:bg-neutral-600 selection:text-white">
                     <div className="max-w-2xl mx-auto space-y-8">
@@ -317,7 +449,7 @@
                         {/* Controls Section */}
                         <div className="space-y-4">
                             {/* Quick Presets */}
-                            <div className="flex gap-4 justify-center">
+                            <div className="flex gap-4 justify-center flex-wrap">
                                 <button 
                                     onClick={() => loadPreset("10s (Get Ready), [1m (Work), 1m (Rest)]x3")}
                                     className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
@@ -331,6 +463,13 @@
                                 >
                                     <Sparkles className="w-4 h-4" />
                                     Meditation
+                                </button>
+                                <button 
+                                    onClick={() => loadPreset("10s (Get Ready), 1m (Bounce), 1m (Alternating Arm Swings), 1m (High March), 1m (Plié), 1m (Rag Doll), 1m (Golf Swing), 1m (Body Wave), 1m (Trunk Twist), 2m (Jump + Hip Twist)")}
+                                    className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
+                                >
+                                    <Wind className="w-4 h-4" />
+                                    Qi Flow
                                 </button>
                             </div>
 
@@ -395,28 +534,54 @@
                             </div>
 
                             {/* Controls */}
-                            <div className="flex items-center justify-center gap-4">
-                                <button
-                                    onClick={toggleTimer}
-                                    disabled={timers.length === 0}
-                                    className={`
-                                        w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg
-                                        ${isRunning 
-                                            ? 'bg-neutral-200 hover:bg-white text-black' 
-                                            : 'bg-white hover:bg-neutral-200 text-black'
-                                        }
-                                        ${timers.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}
-                                    `}
-                                >
-                                    {isRunning ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
-                                </button>
-                                
-                                <button
-                                    onClick={reset}
-                                    className="w-12 h-12 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 flex items-center justify-center transition-all shadow-lg"
-                                >
-                                    <RotateCcw className="w-5 h-5" />
-                                </button>
+                            <div className="flex flex-col gap-6">
+                                <div className="flex items-center justify-center gap-4">
+                                    <button
+                                        onClick={toggleTimer}
+                                        disabled={timers.length === 0}
+                                        className={`
+                                            w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg
+                                            ${isRunning 
+                                                ? 'bg-neutral-200 hover:bg-white text-black' 
+                                                : 'bg-white hover:bg-neutral-200 text-black'
+                                            }
+                                            ${timers.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}
+                                        `}
+                                    >
+                                        {isRunning ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
+                                    </button>
+                                    
+                                    <button
+                                        onClick={reset}
+                                        className="w-12 h-12 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 flex items-center justify-center transition-all shadow-lg"
+                                    >
+                                        <RotateCcw className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                {/* Settings Row */}
+                                <div className="flex items-center justify-center gap-6 pt-2 border-t border-neutral-800">
+                                    {/* Countdown Toggle */}
+                                    <button 
+                                        onClick={() => setCountdownEnabled(!countdownEnabled)}
+                                        className="flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors group"
+                                        title="Toggle 5s Countdown Chirp"
+                                    >
+                                        <Bell className={`w-4 h-4 ${countdownEnabled ? 'text-white' : 'text-neutral-600'}`} />
+                                        <span>5s Count</span>
+                                        {countdownEnabled ? <ToggleRight className="w-6 h-6 text-green-500" /> : <ToggleLeft className="w-6 h-6 text-neutral-600" />}
+                                    </button>
+
+                                    {/* Tone Selector */}
+                                    <button 
+                                        onClick={cycleTone}
+                                        className="flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors"
+                                        title="Cycle Main Alarm Tone"
+                                    >
+                                        <Volume2 className="w-4 h-4" />
+                                        <span className="capitalize w-16 text-left">{toneType}</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
