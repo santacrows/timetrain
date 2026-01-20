@@ -16,41 +16,48 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
-        /* Custom scrollbar for webkit */
+        /* Custom scrollbar for greyscale theme */
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
         }
         ::-webkit-scrollbar-track {
-            background: #0f172a; 
+            background: #171717; /* neutral-900 */
         }
         ::-webkit-scrollbar-thumb {
-            background: #334155; 
+            background: #404040; /* neutral-700 */
             border-radius: 4px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #475569; 
+            background: #525252; /* neutral-600 */
         }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen">
+<body class="bg-neutral-950 text-neutral-100 min-h-screen">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- Icons (Inline SVGs to replace Lucide imports) ---
+        // --- Icons (Inline SVGs) ---
         const Icon = ({ children, className }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 {children}
             </svg>
         );
 
-        const Clock = ({ className }) => (
+        // Train Icon (Front View)
+        const Train = ({ className }) => (
             <Icon className={className}>
-                <circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>
+                <rect x="4" y="3" width="16" height="16" rx="2" />
+                <path d="M4 11h16" />
+                <path d="M12 3v8" />
+                <path d="m8 19-2 3" />
+                <path d="m16 19 2 3" />
+                <circle cx="12" cy="15" r="2" />
             </Icon>
         );
+
         const Play = ({ className }) => (
             <Icon className={className}>
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -97,12 +104,10 @@
             const [timeLeft, setTimeLeft] = useState(0);
             const [error, setError] = useState("");
             
-            // Refs for precise timing and audio
             const intervalRef = useRef(null);
             const audioCtxRef = useRef(null);
             const endTimeRef = useRef(null);
 
-            // Parse a single time string (e.g., "1m 30s") into seconds
             const parseDuration = (str) => {
                 const regex = /(\d+)\s*(h|m|s)/g;
                 let totalSeconds = 0;
@@ -118,7 +123,6 @@
                     if (unit === 's') totalSeconds += value;
                 }
                 
-                // Fallback for simple numbers
                 if (!found) {
                     const simpleNum = parseInt(str.trim());
                     if (!isNaN(simpleNum)) return simpleNum;
@@ -128,7 +132,6 @@
                 return totalSeconds;
             };
 
-            // Centralized parsing function that takes a string argument
             const processSequence = (str) => {
                 setIsRunning(false);
                 setCurrentIndex(0);
@@ -139,13 +142,25 @@
                     return;
                 }
 
-                const parts = str.split(',');
+                // Expand groups: [timer1, timer2]xN
+                // Supports nesting by looping until no brackets remain (e.g., [[10s]x2]x2)
+                let expandedStr = str;
+                const groupRegex = /\[([^\]]+)\]\s*[xX*]\s*(\d+)/g;
+                
+                let iterations = 0;
+                while (expandedStr.match(groupRegex) && iterations < 10) { // Limit iterations to prevent infinite loops on malformed inputs
+                    expandedStr = expandedStr.replace(groupRegex, (match, content, count) => {
+                        const repetitions = parseInt(count, 10);
+                        if (isNaN(repetitions) || repetitions <= 0) return "";
+                        return Array(repetitions).fill(content).join(", ");
+                    });
+                    iterations++;
+                }
+
+                const parts = expandedStr.split(',');
                 const newTimers = parts.map((part, index) => {
-                    // 1. Extract Label: look for text inside parentheses
                     const labelMatch = part.match(/\((.*?)\)/);
                     const label = labelMatch ? labelMatch[1].trim() : '';
-
-                    // 2. Remove Label from string to safely parse duration
                     const timePart = part.replace(/\(.*?\)/g, '');
                     const duration = parseDuration(timePart);
 
@@ -159,7 +174,7 @@
                 }).filter(t => t.duration > 0);
 
                 if (newTimers.length === 0 && str.trim().length > 0) {
-                    setError("Could not understand the time format. Try '10s', '1m', or '1h (Work)'.");
+                    setError("Could not understand the time format. Try '10s', '1m', or sets like '[1m (Work), 1m (Rest)]x3'.");
                 }
 
                 setTimers(newTimers);
@@ -168,18 +183,15 @@
                 }
             };
 
-            // Wrapper for the manual Update button
             const handleManualUpdate = () => {
                 processSequence(inputString);
             };
 
-            // Presets
             const loadPreset = (presetString) => {
                 setInputString(presetString);
                 processSequence(presetString);
             };
 
-            // Initialize Audio Context on first interaction
             const initAudio = () => {
                 if (!audioCtxRef.current) {
                     audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -199,10 +211,9 @@
                 osc.connect(gain);
                 gain.connect(ctx.destination);
 
-                // Nice "ding" sound
                 osc.type = 'sine';
-                osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-                osc.frequency.exponentialRampToValueAtTime(1046.5, ctx.currentTime + 0.1); // C6
+                osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1046.5, ctx.currentTime + 0.1);
 
                 gain.gain.setValueAtTime(0.3, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
@@ -218,7 +229,6 @@
                 if (isRunning) {
                     setIsRunning(false);
                 } else {
-                    // If we finished all timers, reset
                     if (currentIndex >= timers.length) {
                         setCurrentIndex(0);
                         setTimeLeft(timers[0]?.duration || 0);
@@ -244,25 +254,21 @@
                         const distance = endTimeRef.current - now;
 
                         if (distance <= 0) {
-                            // Timer Finished
                             playBeep();
                             const nextIndex = currentIndex + 1;
                             
                             if (nextIndex < timers.length) {
                                 setCurrentIndex(nextIndex);
-                                // Add a small buffer to prevent skipping visually
                                 const nextDuration = timers[nextIndex].duration;
                                 setTimeLeft(nextDuration);
                                 endTimeRef.current = now + nextDuration * 1000;
                             } else {
-                                // All timers done
                                 setTimeLeft(0);
                                 setIsRunning(false);
-                                setCurrentIndex(nextIndex); // Move past last index to show all complete
+                                setCurrentIndex(nextIndex);
                                 clearInterval(intervalRef.current);
                             }
                         } else {
-                            // Update display
                             setTimeLeft(Math.ceil(distance / 1000));
                         }
                     }, 100);
@@ -273,7 +279,6 @@
                 return () => clearInterval(intervalRef.current);
             }, [isRunning, currentIndex, timers]);
 
-            // Initial parse on load
             useEffect(() => {
                 processSequence(inputString);
             }, []);
@@ -298,13 +303,13 @@
             };
 
             return (
-                <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans selection:bg-blue-500 selection:text-white">
+                <div className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8 font-mono selection:bg-neutral-600 selection:text-white">
                     <div className="max-w-2xl mx-auto space-y-8">
                         
                         {/* Header */}
                         <div className="text-center space-y-2">
-                            <h1 className="text-3xl font-bold tracking-tight text-blue-400 flex items-center justify-center gap-2">
-                                <Clock className="w-8 h-8" />
+                            <h1 className="text-3xl font-bold tracking-tight text-white flex items-center justify-center gap-3">
+                                <Train className="w-8 h-8" />
                                 Time Train
                             </h1>
                         </div>
@@ -314,15 +319,15 @@
                             {/* Quick Presets */}
                             <div className="flex gap-4 justify-center">
                                 <button 
-                                    onClick={() => loadPreset("10s (Get Ready), 1m (Work), 1m (Rest), 1m (Work), 1m (Rest), 1m (Work)")}
-                                    className="flex items-center gap-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-4 py-2 rounded-full text-sm font-medium transition-colors"
+                                    onClick={() => loadPreset("10s (Get Ready), [1m (Work), 1m (Rest)]x3")}
+                                    className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
                                 >
                                     <Dumbbell className="w-4 h-4" />
                                     Jump Rope
                                 </button>
                                 <button 
                                     onClick={() => loadPreset("10s, 15m (Walking), 20s, 15m (Sitting)")}
-                                    className="flex items-center gap-2 bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30 px-4 py-2 rounded-full text-sm font-medium transition-colors"
+                                    className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
                                 >
                                     <Sparkles className="w-4 h-4" />
                                     Meditation
@@ -330,18 +335,18 @@
                             </div>
 
                             {/* Input Box */}
-                            <div className="bg-slate-800 rounded-2xl p-6 shadow-xl border border-slate-700">
+                            <div className="bg-neutral-900 rounded-2xl p-6 shadow-xl border border-neutral-800">
                                 <div className="flex gap-2 flex-col sm:flex-row">
                                     <input
                                     type="text"
                                     value={inputString}
                                     onChange={(e) => setInputString(e.target.value)}
-                                    placeholder="e.g. 1m (Work), 30s (Rest)"
-                                    className="flex-1 bg-slate-900 border-slate-700 border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-600"
+                                    placeholder="e.g. 10s, [1m (Work), 30s (Rest)]x5"
+                                    className="flex-1 bg-neutral-950 border-neutral-800 border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-neutral-500 text-neutral-100 placeholder-neutral-600 font-mono"
                                     />
                                     <button
                                     onClick={handleManualUpdate}
-                                    className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                                    className="bg-neutral-800 hover:bg-neutral-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 border border-neutral-700"
                                     >
                                     <Plus className="w-4 h-4" />
                                     Update
@@ -357,15 +362,15 @@
                         </div>
 
                         {/* Main Display */}
-                        <div className="bg-slate-800 rounded-3xl p-8 shadow-2xl border border-slate-700 text-center relative overflow-hidden">
-                            {/* Background Progress Bar */}
+                        <div className="bg-neutral-900 rounded-3xl p-8 shadow-2xl border border-neutral-800 text-center relative overflow-hidden">
+                            {/* Background Progress Bar - High Contrast White/Grey */}
                             <div 
-                                className="absolute top-0 left-0 h-1 bg-blue-500 transition-all duration-100 ease-linear"
+                                className="absolute top-0 left-0 h-1 bg-white transition-all duration-100 ease-linear"
                                 style={{ width: `${getProgress()}%` }}
                             />
 
                             <div className="space-y-2 mb-8">
-                                <div className="text-sm font-medium text-blue-400 uppercase tracking-wider">
+                                <div className="text-sm font-medium text-neutral-400 uppercase tracking-wider">
                                     {currentIndex >= timers.length ? "Sequence Complete" : `Timer ${currentIndex + 1} of ${timers.length}`}
                                 </div>
                                 <div className="text-7xl md:text-8xl font-mono font-bold tracking-tighter text-white tabular-nums">
@@ -375,16 +380,16 @@
                                 <div className="h-8 flex items-center justify-center">
                                 {timers[currentIndex] ? (
                                     timers[currentIndex].label ? (
-                                        <span className="text-xl md:text-5xl font-semibold text-blue-200">
+                                        <span className="text-xl md:text-3xl font-semibold text-neutral-300">
                                             {timers[currentIndex].label}
                                         </span>
                                     ) : (
-                                        <span className="text-slate-400 text-lg">
-
+                                        <span className="text-neutral-600 text-lg">
+                                            ⏱
                                         </span>
                                     )
                                 ) : (
-                                    <span className="text-green-400 font-medium">All Done</span>
+                                    <span className="text-neutral-300 font-medium">All Done</span>
                                 )}
                                 </div>
                             </div>
@@ -397,8 +402,8 @@
                                     className={`
                                         w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg
                                         ${isRunning 
-                                            ? 'bg-amber-500 hover:bg-amber-400 text-slate-900' 
-                                            : 'bg-green-500 hover:bg-green-400 text-slate-900'
+                                            ? 'bg-neutral-200 hover:bg-white text-black' 
+                                            : 'bg-white hover:bg-neutral-200 text-black'
                                         }
                                         ${timers.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}
                                     `}
@@ -408,7 +413,7 @@
                                 
                                 <button
                                     onClick={reset}
-                                    className="w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-300 flex items-center justify-center transition-all shadow-lg"
+                                    className="w-12 h-12 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 flex items-center justify-center transition-all shadow-lg"
                                 >
                                     <RotateCcw className="w-5 h-5" />
                                 </button>
@@ -417,7 +422,7 @@
 
                         {/* Queue List */}
                         <div className="space-y-3">
-                            <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider ml-1">Up Next</h3>
+                            <h3 className="text-sm font-medium text-neutral-500 uppercase tracking-wider ml-1">Up Next</h3>
                             <div className="grid gap-2">
                                 {timers.map((timer, idx) => {
                                     const isActive = idx === currentIndex;
@@ -429,32 +434,32 @@
                                             className={`
                                                 p-4 rounded-xl flex items-center justify-between border transition-all
                                                 ${isActive 
-                                                    ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.2)]' 
+                                                    ? 'bg-neutral-800 border-white/40 shadow-[0_0_10px_rgba(255,255,255,0.1)]' 
                                                     : isPast
-                                                        ? 'bg-slate-800/50 border-slate-700/50 opacity-50'
-                                                        : 'bg-slate-800 border-slate-700'
+                                                        ? 'bg-neutral-900/50 border-neutral-800/50 opacity-40'
+                                                        : 'bg-neutral-900 border-neutral-800'
                                                 }
                                             `}
                                         >
                                             <div className="flex items-center gap-3">
                                                 <div className={`
                                                     w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0
-                                                    ${isActive ? 'bg-blue-500 text-white' : 'bg-slate-700 text-slate-400'}
+                                                    ${isActive ? 'bg-white text-black' : 'bg-neutral-800 text-neutral-500'}
                                                 `}>
                                                     {idx + 1}
                                                 </div>
-                                                <span className={`font-medium truncate ${isActive ? 'text-blue-200' : 'text-slate-300'}`}>
+                                                <span className={`font-medium truncate ${isActive ? 'text-white' : 'text-neutral-400'}`}>
                                                     {timer.label || timer.originalText}
                                                 </span>
                                             </div>
-                                            <div className="font-mono text-slate-400 text-sm whitespace-nowrap">
+                                            <div className="font-mono text-neutral-500 text-sm whitespace-nowrap">
                                                 {formatTime(timer.duration)}
                                             </div>
                                         </div>
                                     );
                                 })}
                                 {timers.length === 0 && (
-                                    <div className="text-center py-8 text-slate-500 border-2 border-dashed border-slate-800 rounded-xl">
+                                    <div className="text-center py-8 text-neutral-600 border-2 border-dashed border-neutral-900 rounded-xl">
                                         No timers added yet.
                                     </div>
                                 )}
