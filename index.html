@@ -251,7 +251,7 @@
                     // Short, quiet chirp for countdown
                     osc.type = 'sine';
                     osc.frequency.setValueAtTime(880, now);
-                    gain.gain.setValueAtTime(0.05, now);
+                    gain.gain.setValueAtTime(0.2, now);
                     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
                     osc.start(now);
                     osc.stop(now + 0.1);
