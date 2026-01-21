@@ -435,9 +435,9 @@
                     osc.frequency.setValueAtTime(220, now); 
                     osc.frequency.linearRampToValueAtTime(440, now + 0.05); 
                     gain.gain.setValueAtTime(0.2, now);
-                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5); 
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 2); 
                     osc.start(now);
-                    osc.stop(now + 1.5);
+                    osc.stop(now + 2);
                 }
                 else if (toneType === 'retro') {
                     osc.type = 'square';
@@ -621,7 +621,7 @@
                                     Random
                                 </button>
                                 <button 
-                                    onClick={() => loadPreset("10s (Get Ready), 1m (Jump), 1m (Rest), 1m (Jump), 1m (Rest), 1m (Jump), 1m (Rest), 1m (Jump)")}
+                                    onClick={() => loadPreset("10s (Get Ready), 1m (Jump), 1m (Rest), 1m (Jump), 1m (Rest), 1m (Jump), 1m (Rest), 1m (Jump), count+, awake-")}
                                     className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
                                 >
                                     <Dumbbell className="w-4 h-4" />
@@ -635,7 +635,7 @@
                                     Meditation
                                 </button>
                                 <button 
-                                    onClick={() => loadPreset("10s (Get Ready), 2m (Bounce), 1m (Alternating Arm Swings), 1m (High March), 1m (Plié), 1m (Rag Doll), 1m (Golf Swing), 1m (Body Wave), 1m (Trunk Twist), 2m (Jump + Hip Twist)")}
+                                    onClick={() => loadPreset("10s (Get Ready), 2m (Bounce), 1m (Alternating Arm Swings), 1m (High March), 1m (Plié), 1m (Rag Doll), 1m (Golf Swing), 1m (Body Wave), 1m (Trunk Twist), 2m (Jump + Hip Twist), count+, awake+")}
                                     className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
                                 >
                                     <Wind className="w-4 h-4" />
