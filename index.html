@@ -39,6 +39,10 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // A 1-second silent MP3 file base64 encoded. 
+        // Playing this in a loop forces iOS Safari to keep the JS thread active in the background.
+        const SILENT_MP3 = 'data:audio/mpeg;base64,SUQzBAAAAAABAFRYVFgAAAASAAADbWFqb3JfYnJhbmQAbXA0MgBUWFRYAAAAEQAAA21pbm9yX3ZlcnNpb24AMABUWFRYAAAAHAAAA2NvbXBhdGlibGVfYnJhbmRzAGlzb21tcDQyAFRTU0UAAAAPAAADTGF2ZjU3LjU2LjEwMAAAAAAAAAAAAAAA//tQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIQAABQoODxQVGR0fISQmKS0wMjY5Oz9BRENHSUtOUFJXWVtYXF9iZGVqbG9ydHZ5fH6AgoOIiouOkZOWmZudoqOkqqyur7Kzt7q8vsLDxsnLzs/S1Nba3N7h5Obp7O7w8/b4+fr9/v8AAAAATGF2YzU3LjY0AAAAAAAAAAAAAAAAJAAAAAAAAAAAASCCCUkiAAAA//tQZAAAEAAgAAAAAAQAAAAEAAACAAgAAAAAAQAAAAEAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//tQZAAAAAAgAAAAAAQAAAAEAAACAAgAAAAAAQAAAAEAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
         // --- Icons (Inline SVGs) ---
         const Icon = ({ children, className }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -141,6 +145,10 @@
             const audioCtxRef = useRef(null);
             const endTimeRef = useRef(null);
             const lastSecondRef = useRef(null); // Track last second played for countdown
+            
+            // Refs for iOS background support
+            const silentAudioRef = useRef(null);
+            const wakeLockRef = useRef(null);
 
             const parseDuration = (str) => {
                 const regex = /(\d+)\s*(h|m|s)/g;
@@ -288,18 +296,57 @@
                 }
             };
 
-            const toggleTimer = () => {
+            const toggleTimer = async () => {
                 initAudio();
-                if (timers.length === 0) processSequence(inputString);
                 
-                if (isRunning) {
-                    setIsRunning(false);
-                } else {
+                // If we are currently stopped and about to start:
+                if (!isRunning) {
+                    if (timers.length === 0) processSequence(inputString);
+                    
                     if (currentIndex >= timers.length) {
                         setCurrentIndex(0);
                         setTimeLeft(timers[0]?.duration || 0);
                     }
+
+                    // 1. Play Silent Audio (Keep Alive Hack)
+                    // Must be done directly in the click handler to satisfy iOS permission requirements
+                    if (silentAudioRef.current) {
+                        try {
+                            await silentAudioRef.current.play();
+                        } catch (e) {
+                            console.error("Silent audio failed to play:", e);
+                        }
+                    }
+
+                    // 2. Request Wake Lock (Keep Screen On)
+                    if ('wakeLock' in navigator) {
+                        try {
+                            wakeLockRef.current = await navigator.wakeLock.request('screen');
+                        } catch (err) {
+                            console.log("Wake Lock failed:", err);
+                        }
+                    }
+
                     setIsRunning(true);
+                } 
+                // If we are currently running and about to pause:
+                else {
+                    setIsRunning(false);
+                    
+                    // Stop Silent Audio
+                    if (silentAudioRef.current) {
+                        silentAudioRef.current.pause();
+                    }
+                    
+                    // Release Wake Lock
+                    if (wakeLockRef.current) {
+                        try {
+                            await wakeLockRef.current.release();
+                            wakeLockRef.current = null;
+                        } catch (err) {
+                            console.log("Wake Lock release failed:", err);
+                        }
+                    }
                 }
             };
 
@@ -307,6 +354,10 @@
                 setIsRunning(false);
                 setCurrentIndex(0);
                 lastSecondRef.current = null;
+                
+                if (silentAudioRef.current) silentAudioRef.current.pause();
+                if (wakeLockRef.current) wakeLockRef.current.release();
+
                 if (timers.length > 0) {
                     setTimeLeft(timers[0].duration);
                 }
@@ -344,6 +395,11 @@
                             } else {
                                 setTimeLeft(0);
                                 setIsRunning(false);
+                                
+                                // Clean up background tasks when finished
+                                if (silentAudioRef.current) silentAudioRef.current.pause();
+                                if (wakeLockRef.current) wakeLockRef.current.release();
+                                
                                 setCurrentIndex(nextIndex);
                                 clearInterval(intervalRef.current);
                             }
@@ -392,12 +448,7 @@
                 setToneType(newTone);
                 
                 // Preview new tone
-                // Need a slight delay or detached context call to avoid render loop issues, 
-                // but direct call here is fine as it's a user interaction
                 setTimeout(() => {
-                     // Temp mock to reuse playSound logic but we need to pass the NEW type
-                     // We can't use playSound() directly because state hasn't updated in this closure yet
-                     // So we reconstruct the sound just for preview
                      if (!audioCtxRef.current) return;
                      const ctx = audioCtxRef.current;
                      const osc = ctx.createOscillator();
@@ -436,6 +487,15 @@
 
             return (
                 <div className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8 font-mono selection:bg-neutral-600 selection:text-white">
+                    {/* Hidden audio element for background keep-alive */}
+                    <audio 
+                        ref={silentAudioRef} 
+                        src={SILENT_MP3} 
+                        loop 
+                        playsInline
+                        className="hidden" 
+                    />
+                    
                     <div className="max-w-2xl mx-auto space-y-8">
                         
                         {/* Header */}
