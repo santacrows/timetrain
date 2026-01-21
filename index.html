@@ -90,7 +90,7 @@
         );
         const Sparkles = ({ className }) => (
             <Icon className={className}>
-                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M9 5h4"></path><path d="M3 7h4"></path>
+                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M9 5h4"></path><path d="M3 7h4"></path>
             </Icon>
         );
         const Wind = ({ className }) => (
@@ -124,6 +124,26 @@
                 <circle cx="16" cy="12" r="2"></circle>
             </Icon>
         );
+        const Moon = ({ className }) => (
+            <Icon className={className}>
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+            </Icon>
+        );
+        const Sun = ({ className }) => (
+             <Icon className={className}>
+                <circle cx="12" cy="12" r="4"></circle>
+                <path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41-1.41"></path><path d="m19.07 4.93-1.41 1.41"></path>
+            </Icon>
+        );
+        const Shuffle = ({ className }) => (
+            <Icon className={className}>
+                <path d="M16 3h5v5"></path>
+                <path d="M4 20 21 3"></path>
+                <path d="M21 16v5h-5"></path>
+                <path d="M15 15l-5 5"></path>
+                <path d="M4 4l5 5"></path>
+            </Icon>
+        );
 
 
         // --- Main Component ---
@@ -135,12 +155,132 @@
             const [timeLeft, setTimeLeft] = useState(0);
             const [error, setError] = useState("");
             const [countdownEnabled, setCountdownEnabled] = useState(true);
+            const [keepAwake, setKeepAwake] = useState(true);
             const [toneType, setToneType] = useState('standard'); // 'standard', 'zen', 'retro'
             
             const intervalRef = useRef(null);
             const audioCtxRef = useRef(null);
             const endTimeRef = useRef(null);
             const lastSecondRef = useRef(null); // Track last second played for countdown
+            
+            const wakeLockRef = useRef(null);
+            const silentAudioRef = useRef(null);
+
+            // --- Random Logic Helper ---
+            const getRandomDurationString = () => {
+                const r = Math.random();
+                if (r < 0.3) {
+                    // Seconds only (10s - 90s)
+                    return `${Math.floor(Math.random() * 81) + 10}s`;
+                } else if (r < 0.6) {
+                    // Minutes only (1m - 60m)
+                    return `${Math.floor(Math.random() * 60) + 1}m`;
+                } else if (r < 0.9) {
+                    // Minutes and Seconds
+                    return `${Math.floor(Math.random() * 10) + 1}m ${Math.floor(Math.random() * 50) + 10}s`;
+                } else {
+                    // Hours (Rare)
+                    return `1h ${Math.floor(Math.random() * 30)}m`;
+                }
+            };
+
+            const generateRandomPreset = () => {
+                const structure = Math.random();
+                
+                if (structure < 0.25) {
+                    // Single Long Timer
+                    return `${getRandomDurationString()}`;
+                } else if (structure < 0.5) {
+                    // Simple Sequence (3-5 items)
+                    const count = Math.floor(Math.random() * 3) + 3;
+                    let seq = [];
+                    for(let i=0; i<count; i++) {
+                        seq.push(`${getRandomDurationString()}`);
+                    }
+                    return seq.join(", ");
+                } else {
+                    // Sets / Loop
+                    const work = getRandomDurationString();
+                    const rest = `${Math.floor(Math.random() * 45) + 15}s`;
+                    const reps = Math.floor(Math.random() * 6) + 3; // 3-8 reps
+                    return `[${work}, ${rest}]x${reps}`;
+                }
+            };
+
+            // --- Background Audio Hack ---
+            // To keep iOS timers alive, we play a silent HTML5 audio track in a loop.
+            // This grants "background execution" privileges to the tab.
+            const toggleSilentAudio = (shouldPlay) => {
+                if (!silentAudioRef.current) {
+                    const audio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
+                    audio.loop = true;
+                    silentAudioRef.current = audio;
+                }
+                
+                if (shouldPlay) {
+                    silentAudioRef.current.play().catch(e => console.log("Silent audio play failed", e));
+                } else {
+                    silentAudioRef.current.pause();
+                }
+            };
+
+            // --- Wake Lock Logic ---
+            const requestWakeLock = async () => {
+                // Feature check
+                if (!('wakeLock' in navigator)) return;
+
+                try {
+                    const lock = await navigator.wakeLock.request('screen');
+                    wakeLockRef.current = lock;
+                    lock.addEventListener('release', () => {
+                        console.log('Wake Lock was released');
+                    });
+                    console.log('Wake Lock is active');
+                } catch (err) {
+                    // Gracefully handle permission errors (common in restricted iframes)
+                    console.warn(`Wake Lock request failed: ${err.name}, ${err.message}`);
+                    // We consume the error so it doesn't break execution.
+                    // The timer will continue running via the silent audio fallback regardless.
+                }
+            };
+
+            const releaseWakeLock = async () => {
+                if (wakeLockRef.current) {
+                    try {
+                        await wakeLockRef.current.release();
+                        wakeLockRef.current = null;
+                    } catch (err) {
+                        console.error(`${err.name}, ${err.message}`);
+                    }
+                }
+            };
+
+            // Re-acquire lock if tab becomes visible again and we should be running with Keep Awake on
+            useEffect(() => {
+                const handleVisibilityChange = () => {
+                    if (document.visibilityState === 'visible' && isRunning && keepAwake) {
+                        requestWakeLock();
+                    }
+                };
+                document.addEventListener('visibilitychange', handleVisibilityChange);
+                return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+            }, [isRunning, keepAwake]);
+            
+            // Separate Effect for Wake Lock to avoid resetting timer on toggle
+            useEffect(() => {
+                if (isRunning && keepAwake) {
+                    requestWakeLock();
+                } else {
+                    releaseWakeLock();
+                }
+                
+                return () => {
+                   // Clean up on unmount or logic change - we rely on the if/else above usually,
+                   // but release on unmount is safe.
+                   releaseWakeLock(); 
+                }
+            }, [isRunning, keepAwake]);
+
 
             const parseDuration = (str) => {
                 const regex = /(\d+)\s*(h|m|s)/g;
@@ -176,9 +316,29 @@
                     return;
                 }
 
+                let expandedStr = str;
+
+                // --- Keyword Logic: Settings ---
+                // Check for toggle keywords and remove them
+                if (expandedStr.match(/count\+/i)) {
+                    setCountdownEnabled(true);
+                    expandedStr = expandedStr.replace(/count\+/gi, '');
+                }
+                if (expandedStr.match(/count-/i)) {
+                    setCountdownEnabled(false);
+                    expandedStr = expandedStr.replace(/count-/gi, '');
+                }
+                if (expandedStr.match(/awake\+/i)) {
+                    setKeepAwake(true);
+                    expandedStr = expandedStr.replace(/awake\+/gi, '');
+                }
+                if (expandedStr.match(/awake-/i)) {
+                    setKeepAwake(false);
+                    expandedStr = expandedStr.replace(/awake-/gi, '');
+                }
+
                 // Expand groups: [timer1, timer2]xN
                 // Supports nesting by looping until no brackets remain (e.g., [[10s]x2]x2)
-                let expandedStr = str;
                 const groupRegex = /\[([^\]]+)\]\s*[xX*]\s*(\d+)/g;
                 
                 let iterations = 0;
@@ -190,6 +350,10 @@
                     });
                     iterations++;
                 }
+
+                // Handle "random" keyword anywhere in string
+                // We do this AFTER expansion so [random]x3 generates 3 unique times
+                expandedStr = expandedStr.replace(/random/gi, () => getRandomDurationString());
 
                 const parts = expandedStr.split(',');
                 const newTimers = parts.map((part, index) => {
@@ -248,7 +412,6 @@
                 const now = ctx.currentTime;
 
                 if (type === 'chirp') {
-                    // Short, quiet chirp for countdown
                     osc.type = 'sine';
                     osc.frequency.setValueAtTime(880, now);
                     gain.gain.setValueAtTime(0.2, now);
@@ -258,7 +421,6 @@
                     return;
                 }
 
-                // Main Beeps
                 if (toneType === 'standard') {
                     osc.type = 'sine';
                     osc.frequency.setValueAtTime(523.25, now);
@@ -270,10 +432,10 @@
                 } 
                 else if (toneType === 'zen') {
                     osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(220, now); // A3
-                    osc.frequency.linearRampToValueAtTime(440, now + 0.05); // A4
+                    osc.frequency.setValueAtTime(220, now); 
+                    osc.frequency.linearRampToValueAtTime(440, now + 0.05); 
                     gain.gain.setValueAtTime(0.2, now);
-                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5); // Long fade
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5); 
                     osc.start(now);
                     osc.stop(now + 1.5);
                 }
@@ -312,8 +474,12 @@
                 }
             };
 
+            // --- MAIN LOOP ---
             useEffect(() => {
                 if (isRunning && currentIndex < timers.length) {
+                    // Activate Silent Audio ALWAYS when running
+                    toggleSilentAudio(true);
+
                     endTimeRef.current = Date.now() + timeLeft * 1000;
                     lastSecondRef.current = timeLeft; 
 
@@ -324,7 +490,6 @@
 
                         // Countdown Chirp Logic
                         if (countdownEnabled && currentSec <= 5 && currentSec > 0) {
-                            // Only chirp if we've crossed a second boundary
                             if (currentSec !== lastSecondRef.current) {
                                 playSound('chirp');
                                 lastSecondRef.current = currentSec;
@@ -356,10 +521,14 @@
                     }, 100);
                 } else {
                     clearInterval(intervalRef.current);
+                    toggleSilentAudio(false);
                 }
 
-                return () => clearInterval(intervalRef.current);
-            }, [isRunning, currentIndex, timers, countdownEnabled, toneType]); // Dependencies for tone/countdown changes
+                return () => {
+                    clearInterval(intervalRef.current);
+                    toggleSilentAudio(false);
+                };
+            }, [isRunning, currentIndex, timers, countdownEnabled, toneType]); // removed keepAwake from here to prevent reset
 
             useEffect(() => {
                 processSequence(inputString);
@@ -391,13 +560,7 @@
                 const newTone = tones[nextIndex];
                 setToneType(newTone);
                 
-                // Preview new tone
-                // Need a slight delay or detached context call to avoid render loop issues, 
-                // but direct call here is fine as it's a user interaction
                 setTimeout(() => {
-                     // Temp mock to reuse playSound logic but we need to pass the NEW type
-                     // We can't use playSound() directly because state hasn't updated in this closure yet
-                     // So we reconstruct the sound just for preview
                      if (!audioCtxRef.current) return;
                      const ctx = audioCtxRef.current;
                      const osc = ctx.createOscillator();
@@ -451,6 +614,13 @@
                             {/* Quick Presets */}
                             <div className="flex gap-4 justify-center flex-wrap">
                                 <button 
+                                    onClick={() => loadPreset(generateRandomPreset())}
+                                    className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
+                                >
+                                    <Shuffle className="w-4 h-4" />
+                                    Random
+                                </button>
+                                <button 
                                     onClick={() => loadPreset("10s (Get Ready), 1m (Jump), 1m (Rest), 1m (Jump), 1m (Rest), 1m (Jump), 1m (Rest), 1m (Jump)")}
                                     className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
                                 >
@@ -458,7 +628,7 @@
                                     Jump Rope
                                 </button>
                                 <button 
-                                    onClick={() => loadPreset("10s, 15m (Walking), 20s, 15m (Sitting)")}
+                                    onClick={() => loadPreset("10s (Preparing to Walk), 15m (Walking), 20s (Preparing to Sit), 15m (Sitting), count-, awake-")}
                                     className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
                                 >
                                     <Sparkles className="w-4 h-4" />
@@ -507,6 +677,17 @@
                                 className="absolute top-0 left-0 h-1 bg-white transition-all duration-100 ease-linear"
                                 style={{ width: `${getProgress()}%` }}
                             />
+                            
+                            {/* Wake Lock Indicator (Subtle) */}
+                            {keepAwake && isRunning && (
+                                <div className="absolute top-4 right-4 flex items-center gap-1.5 px-2 py-1 bg-neutral-800/80 rounded-full text-[10px] text-green-400 border border-green-900/30 shadow-sm backdrop-blur-sm pointer-events-none">
+                                    <span className="relative flex h-2 w-2">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                    </span>
+                                    Active
+                                </div>
+                            )}
 
                             <div className="space-y-2 mb-8">
                                 <div className="text-sm font-medium text-neutral-400 uppercase tracking-wider">
@@ -560,7 +741,7 @@
                                 </div>
 
                                 {/* Settings Row */}
-                                <div className="flex items-center justify-center gap-6 pt-2 border-t border-neutral-800">
+                                <div className="flex items-center justify-center gap-6 pt-2 border-t border-neutral-800 flex-wrap">
                                     {/* Countdown Toggle */}
                                     <button 
                                         onClick={() => setCountdownEnabled(!countdownEnabled)}
@@ -570,6 +751,17 @@
                                         <Bell className={`w-4 h-4 ${countdownEnabled ? 'text-white' : 'text-neutral-600'}`} />
                                         <span>5s Count</span>
                                         {countdownEnabled ? <ToggleRight className="w-6 h-6 text-green-500" /> : <ToggleLeft className="w-6 h-6 text-neutral-600" />}
+                                    </button>
+
+                                    {/* Keep Awake Toggle (Screen Lock Only) */}
+                                    <button 
+                                        onClick={() => setKeepAwake(!keepAwake)}
+                                        className="flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors group"
+                                        title="Keeps screen on while running"
+                                    >
+                                        {keepAwake ? <Sun className="w-4 h-4 text-white" /> : <Moon className="w-4 h-4 text-neutral-600" />}
+                                        <span>Keep Awake</span>
+                                        {keepAwake ? <ToggleRight className="w-6 h-6 text-green-500" /> : <ToggleLeft className="w-6 h-6 text-neutral-600" />}
                                     </button>
 
                                     {/* Tone Selector */}
