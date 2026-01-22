@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Time Train</title>
     
     <!-- React & ReactDOM -->
@@ -31,9 +31,13 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #525252; /* neutral-600 */
         }
+        /* Prevent iOS zoom on input focus */
+        input {
+            font-size: 16px; 
+        }
     </style>
 </head>
-<body class="bg-neutral-950 text-neutral-100 min-h-screen">
+<body class="bg-neutral-950 text-neutral-100 min-h-screen overscroll-none">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -166,7 +170,7 @@
             const wakeLockRef = useRef(null);
             const silentAudioRef = useRef(null);
 
-            // --- Random Logic Helper ---
+            // --- Random Logic Helper (Kept for keyword support) ---
             const getRandomDurationString = () => {
                 const r = Math.random();
                 if (r < 0.3) {
@@ -184,32 +188,8 @@
                 }
             };
 
-            const generateRandomPreset = () => {
-                const structure = Math.random();
-                
-                if (structure < 0.25) {
-                    // Single Long Timer
-                    return `${getRandomDurationString()}`;
-                } else if (structure < 0.5) {
-                    // Simple Sequence (3-5 items)
-                    const count = Math.floor(Math.random() * 3) + 3;
-                    let seq = [];
-                    for(let i=0; i<count; i++) {
-                        seq.push(`${getRandomDurationString()}`);
-                    }
-                    return seq.join(", ");
-                } else {
-                    // Sets / Loop
-                    const work = getRandomDurationString();
-                    const rest = `${Math.floor(Math.random() * 45) + 15}s`;
-                    const reps = Math.floor(Math.random() * 6) + 3; // 3-8 reps
-                    return `[${work}, ${rest}]x${reps}`;
-                }
-            };
-
             // --- Background Audio Hack ---
             // To keep iOS timers alive, we play a silent HTML5 audio track in a loop.
-            // This grants "background execution" privileges to the tab.
             const toggleSilentAudio = (shouldPlay) => {
                 if (!silentAudioRef.current) {
                     const audio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA");
@@ -226,21 +206,15 @@
 
             // --- Wake Lock Logic ---
             const requestWakeLock = async () => {
-                // Feature check
                 if (!('wakeLock' in navigator)) return;
-
                 try {
                     const lock = await navigator.wakeLock.request('screen');
                     wakeLockRef.current = lock;
                     lock.addEventListener('release', () => {
                         console.log('Wake Lock was released');
                     });
-                    console.log('Wake Lock is active');
                 } catch (err) {
-                    // Gracefully handle permission errors (common in restricted iframes)
                     console.warn(`Wake Lock request failed: ${err.name}, ${err.message}`);
-                    // We consume the error so it doesn't break execution.
-                    // The timer will continue running via the silent audio fallback regardless.
                 }
             };
 
@@ -255,7 +229,6 @@
                 }
             };
 
-            // Re-acquire lock if tab becomes visible again and we should be running with Keep Awake on
             useEffect(() => {
                 const handleVisibilityChange = () => {
                     if (document.visibilityState === 'visible' && isRunning && keepAwake) {
@@ -266,19 +239,13 @@
                 return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
             }, [isRunning, keepAwake]);
             
-            // Separate Effect for Wake Lock to avoid resetting timer on toggle
             useEffect(() => {
                 if (isRunning && keepAwake) {
                     requestWakeLock();
                 } else {
                     releaseWakeLock();
                 }
-                
-                return () => {
-                   // Clean up on unmount or logic change - we rely on the if/else above usually,
-                   // but release on unmount is safe.
-                   releaseWakeLock(); 
-                }
+                return () => releaseWakeLock(); 
             }, [isRunning, keepAwake]);
 
 
@@ -319,7 +286,6 @@
                 let expandedStr = str;
 
                 // --- Keyword Logic: Settings ---
-                // Check for toggle keywords and remove them
                 if (expandedStr.match(/count\+/i)) {
                     setCountdownEnabled(true);
                     expandedStr = expandedStr.replace(/count\+/gi, '');
@@ -338,7 +304,6 @@
                 }
 
                 // Expand groups: [timer1, timer2]xN
-                // Supports nesting by looping until no brackets remain (e.g., [[10s]x2]x2)
                 const groupRegex = /\[([^\]]+)\]\s*[xX*]\s*(\d+)/g;
                 
                 let iterations = 0;
@@ -351,8 +316,7 @@
                     iterations++;
                 }
 
-                // Handle "random" keyword anywhere in string
-                // We do this AFTER expansion so [random]x3 generates 3 unique times
+                // Handle "random" keyword
                 expandedStr = expandedStr.replace(/random/gi, () => getRandomDurationString());
 
                 const parts = expandedStr.split(',');
@@ -477,9 +441,7 @@
             // --- MAIN LOOP ---
             useEffect(() => {
                 if (isRunning && currentIndex < timers.length) {
-                    // Activate Silent Audio ALWAYS when running
                     toggleSilentAudio(true);
-
                     endTimeRef.current = Date.now() + timeLeft * 1000;
                     lastSecondRef.current = timeLeft; 
 
@@ -488,7 +450,6 @@
                         const distance = endTimeRef.current - now;
                         const currentSec = Math.ceil(distance / 1000);
 
-                        // Countdown Chirp Logic
                         if (countdownEnabled && currentSec <= 5 && currentSec > 0) {
                             if (currentSec !== lastSecondRef.current) {
                                 playSound('chirp');
@@ -528,7 +489,7 @@
                     clearInterval(intervalRef.current);
                     toggleSilentAudio(false);
                 };
-            }, [isRunning, currentIndex, timers, countdownEnabled, toneType]); // removed keepAwake from here to prevent reset
+            }, [isRunning, currentIndex, timers, countdownEnabled, toneType]);
 
             useEffect(() => {
                 processSequence(inputString);
@@ -598,71 +559,64 @@
             };
 
             return (
-                <div className="min-h-screen bg-neutral-950 text-neutral-100 p-4 md:p-8 font-mono selection:bg-neutral-600 selection:text-white">
-                    <div className="max-w-2xl mx-auto space-y-8">
+                <div className="min-h-screen bg-neutral-950 text-neutral-100 p-3 md:p-8 font-mono selection:bg-neutral-600 selection:text-white pb-safe">
+                    <div className="max-w-xl mx-auto space-y-4 md:space-y-6">
                         
                         {/* Header */}
-                        <div className="text-center space-y-2">
-                            <h1 className="text-3xl font-bold tracking-tight text-white flex items-center justify-center gap-3">
-                                <Train className="w-8 h-8" />
+                        <div className="text-center py-2">
+                            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white flex items-center justify-center gap-3">
+                                <Train className="w-6 h-6 md:w-8 md:h-8" />
                                 <a href="https://github.com/santacrows/timetrain/blob/main/README.md">Time Train</a>
                             </h1>
                         </div>
 
                         {/* Controls Section */}
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                             {/* Quick Presets */}
-                            <div className="flex gap-4 justify-center flex-wrap">
-                                <button 
-                                    onClick={() => loadPreset(generateRandomPreset())}
-                                    className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
-                                >
-                                    <Shuffle className="w-4 h-4" />
-                                    Random
-                                </button>
+                            <div className="flex gap-2 justify-center flex-wrap">
                                 <button 
                                     onClick={() => loadPreset("10s (Get Ready), 1m (Jump), 1m (Rest), 1m (Jump), 1m (Rest), 1m (Jump), 1m (Rest), 1m (Jump), count+, awake-")}
-                                    className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
+                                    className="flex-1 min-w-[120px] flex items-center justify-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-3 py-2.5 rounded-lg text-xs md:text-sm font-medium transition-colors touch-manipulation"
                                 >
-                                    <Dumbbell className="w-4 h-4" />
+                                    <Dumbbell className="w-3 h-3 md:w-4 md:h-4" />
                                     Jump Rope
                                 </button>
                                 <button 
                                     onClick={() => loadPreset("10s (Preparing to Walk), 15m (Walking), 20s (Preparing to Sit), 15m (Sitting), count-, awake-")}
-                                    className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
+                                    className="flex-1 min-w-[120px] flex items-center justify-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-3 py-2.5 rounded-lg text-xs md:text-sm font-medium transition-colors touch-manipulation"
                                 >
-                                    <Sparkles className="w-4 h-4" />
+                                    <Sparkles className="w-3 h-3 md:w-4 md:h-4" />
                                     Meditation
                                 </button>
                                 <button 
                                     onClick={() => loadPreset("10s (Get Ready), 2m (Bounce), 1m (Alternating Arm Swings), 1m (High March), 1m (Plié), 1m (Rag Doll), 1m (Golf Swing), 1m (Body Wave), 1m (Trunk Twist), 2m (Jump + Hip Twist), count+, awake+")}
-                                    className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-4 py-2 rounded-full text-sm font-medium transition-colors"
+                                    className="flex-1 min-w-[120px] flex items-center justify-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 px-3 py-2.5 rounded-lg text-xs md:text-sm font-medium transition-colors touch-manipulation"
                                 >
-                                    <Wind className="w-4 h-4" />
+                                    <Wind className="w-3 h-3 md:w-4 md:h-4" />
                                     Qi Flow
                                 </button>
                             </div>
 
                             {/* Input Box */}
-                            <div className="bg-neutral-900 rounded-2xl p-6 shadow-xl border border-neutral-800">
+                            <div className="bg-neutral-900 rounded-xl p-4 shadow-xl border border-neutral-800">
                                 <div className="flex gap-2 flex-col sm:flex-row">
                                     <input
                                     type="text"
                                     value={inputString}
                                     onChange={(e) => setInputString(e.target.value)}
                                     placeholder="e.g. 10s, [1m (Work), 30s (Rest)]x5"
-                                    className="flex-1 bg-neutral-950 border-neutral-800 border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-neutral-500 text-neutral-100 placeholder-neutral-600 font-mono"
+                                    className="flex-1 bg-neutral-950 border-neutral-800 border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-neutral-500 text-neutral-100 placeholder-neutral-600 font-mono text-base"
                                     />
                                     <button
                                     onClick={handleManualUpdate}
-                                    className="bg-neutral-800 hover:bg-neutral-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 border border-neutral-700"
+                                    className="bg-neutral-800 hover:bg-neutral-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 border border-neutral-700 touch-manipulation"
                                     >
                                     <Plus className="w-4 h-4" />
                                     Update
                                     </button>
                                 </div>
                                 {error && (
-                                    <div className="mt-3 text-red-400 text-sm flex items-center gap-2">
+                                    <div className="mt-3 text-red-400 text-xs md:text-sm flex items-center gap-2">
                                     <AlertCircle className="w-4 h-4" />
                                     {error}
                                     </div>
@@ -671,14 +625,14 @@
                         </div>
 
                         {/* Main Display */}
-                        <div className="bg-neutral-900 rounded-3xl p-8 shadow-2xl border border-neutral-800 text-center relative overflow-hidden">
-                            {/* Background Progress Bar - High Contrast White/Grey */}
+                        <div className="bg-neutral-900 rounded-2xl md:rounded-3xl p-6 md:p-8 shadow-2xl border border-neutral-800 text-center relative overflow-hidden">
+                            {/* Background Progress Bar */}
                             <div 
                                 className="absolute top-0 left-0 h-1 bg-white transition-all duration-100 ease-linear"
                                 style={{ width: `${getProgress()}%` }}
                             />
                             
-                            {/* Wake Lock Indicator (Subtle) */}
+                            {/* Wake Lock Indicator */}
                             {keepAwake && isRunning && (
                                 <div className="absolute top-4 right-4 flex items-center gap-1.5 px-2 py-1 bg-neutral-800/80 rounded-full text-[10px] text-green-400 border border-green-900/30 shadow-sm backdrop-blur-sm pointer-events-none">
                                     <span className="relative flex h-2 w-2">
@@ -689,18 +643,17 @@
                                 </div>
                             )}
 
-                            <div className="space-y-2 mb-8">
-                                <div className="text-sm font-medium text-neutral-400 uppercase tracking-wider">
+                            <div className="space-y-2 mb-6 md:mb-8">
+                                <div className="text-xs md:text-sm font-medium text-neutral-500 uppercase tracking-wider">
                                     {currentIndex >= timers.length ? "Sequence Complete" : `Timer ${currentIndex + 1} of ${timers.length}`}
                                 </div>
-                                <div className="text-7xl md:text-8xl font-mono font-bold tracking-tighter text-white tabular-nums">
+                                <div className="text-6xl md:text-8xl font-mono font-bold tracking-tighter text-white tabular-nums leading-tight">
                                     {formatTime(timeLeft)}
                                 </div>
-                                {/* Dynamic Label Display */}
-                                <div className="h-8 flex items-center justify-center">
+                                <div className="h-8 flex items-center justify-center px-2">
                                 {timers[currentIndex] ? (
                                     timers[currentIndex].label ? (
-                                        <span className="text-xl md:text-3xl font-semibold text-neutral-300">
+                                        <span className="text-lg md:text-3xl font-semibold text-neutral-300 truncate max-w-full block">
                                             {timers[currentIndex].label}
                                         </span>
                                     ) : (
@@ -716,12 +669,19 @@
 
                             {/* Controls */}
                             <div className="flex flex-col gap-6">
-                                <div className="flex items-center justify-center gap-4">
+                                <div className="flex items-center justify-center gap-6">
+                                    <button
+                                        onClick={reset}
+                                        className="w-12 h-12 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 flex items-center justify-center transition-all shadow-lg active:scale-95 touch-manipulation"
+                                    >
+                                        <RotateCcw className="w-5 h-5" />
+                                    </button>
+                                    
                                     <button
                                         onClick={toggleTimer}
                                         disabled={timers.length === 0}
                                         className={`
-                                            w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg
+                                            w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 touch-manipulation
                                             ${isRunning 
                                                 ? 'bg-neutral-200 hover:bg-white text-black' 
                                                 : 'bg-white hover:bg-neutral-200 text-black'
@@ -731,55 +691,44 @@
                                     >
                                         {isRunning ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
                                     </button>
-                                    
-                                    <button
-                                        onClick={reset}
-                                        className="w-12 h-12 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 flex items-center justify-center transition-all shadow-lg"
-                                    >
-                                        <RotateCcw className="w-5 h-5" />
-                                    </button>
+
+                                    <div className="w-12 h-12"></div> {/* Spacer for symmetry */}
                                 </div>
 
                                 {/* Settings Row */}
-                                <div className="flex items-center justify-center gap-6 pt-2 border-t border-neutral-800 flex-wrap">
-                                    {/* Countdown Toggle */}
+                                <div className="flex items-center justify-center gap-4 pt-2 border-t border-neutral-800 flex-wrap">
                                     <button 
                                         onClick={() => setCountdownEnabled(!countdownEnabled)}
-                                        className="flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors group"
-                                        title="Toggle 5s Countdown Chirp"
+                                        className="flex items-center gap-2 text-xs md:text-sm text-neutral-400 hover:text-white transition-colors group px-2 py-1 touch-manipulation"
                                     >
                                         <Bell className={`w-4 h-4 ${countdownEnabled ? 'text-white' : 'text-neutral-600'}`} />
                                         <span>5s Count</span>
-                                        {countdownEnabled ? <ToggleRight className="w-6 h-6 text-green-500" /> : <ToggleLeft className="w-6 h-6 text-neutral-600" />}
+                                        {countdownEnabled ? <ToggleRight className="w-5 h-5 md:w-6 md:h-6 text-green-500" /> : <ToggleLeft className="w-5 h-5 md:w-6 md:h-6 text-neutral-600" />}
                                     </button>
 
-                                    {/* Keep Awake Toggle (Screen Lock Only) */}
                                     <button 
                                         onClick={() => setKeepAwake(!keepAwake)}
-                                        className="flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors group"
-                                        title="Keeps screen on while running"
+                                        className="flex items-center gap-2 text-xs md:text-sm text-neutral-400 hover:text-white transition-colors group px-2 py-1 touch-manipulation"
                                     >
                                         {keepAwake ? <Sun className="w-4 h-4 text-white" /> : <Moon className="w-4 h-4 text-neutral-600" />}
-                                        <span>Keep Awake</span>
-                                        {keepAwake ? <ToggleRight className="w-6 h-6 text-green-500" /> : <ToggleLeft className="w-6 h-6 text-neutral-600" />}
+                                        <span>Awake</span>
+                                        {keepAwake ? <ToggleRight className="w-5 h-5 md:w-6 md:h-6 text-green-500" /> : <ToggleLeft className="w-5 h-5 md:w-6 md:h-6 text-neutral-600" />}
                                     </button>
-
-                                    {/* Tone Selector */}
+                                    
                                     <button 
                                         onClick={cycleTone}
-                                        className="flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors"
-                                        title="Cycle Main Alarm Tone"
+                                        className="flex items-center gap-2 text-xs md:text-sm text-neutral-400 hover:text-white transition-colors px-2 py-1 touch-manipulation"
                                     >
                                         <Volume2 className="w-4 h-4" />
-                                        <span className="capitalize w-16 text-left">{toneType}</span>
+                                        <span className="capitalize w-14 text-left">{toneType}</span>
                                     </button>
                                 </div>
                             </div>
                         </div>
 
                         {/* Queue List */}
-                        <div className="space-y-3">
-                            <h3 className="text-sm font-medium text-neutral-500 uppercase tracking-wider ml-1">Up Next</h3>
+                        <div className="space-y-2 pb-8">
+                            <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wider ml-1">Up Next</h3>
                             <div className="grid gap-2">
                                 {timers.map((timer, idx) => {
                                     const isActive = idx === currentIndex;
@@ -789,7 +738,7 @@
                                         <div 
                                             key={idx}
                                             className={`
-                                                p-4 rounded-xl flex items-center justify-between border transition-all
+                                                p-3 md:p-4 rounded-xl flex items-center justify-between border transition-all
                                                 ${isActive 
                                                     ? 'bg-neutral-800 border-white/40 shadow-[0_0_10px_rgba(255,255,255,0.1)]' 
                                                     : isPast
@@ -798,7 +747,7 @@
                                                 }
                                             `}
                                         >
-                                            <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-3 min-w-0">
                                                 <div className={`
                                                     w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0
                                                     ${isActive ? 'bg-white text-black' : 'bg-neutral-800 text-neutral-500'}
@@ -809,14 +758,14 @@
                                                     {timer.label || timer.originalText}
                                                 </span>
                                             </div>
-                                            <div className="font-mono text-neutral-500 text-sm whitespace-nowrap">
+                                            <div className="font-mono text-neutral-500 text-xs md:text-sm whitespace-nowrap ml-2">
                                                 {formatTime(timer.duration)}
                                             </div>
                                         </div>
                                     );
                                 })}
                                 {timers.length === 0 && (
-                                    <div className="text-center py-8 text-neutral-600 border-2 border-dashed border-neutral-900 rounded-xl">
+                                    <div className="text-center py-6 text-neutral-600 border-2 border-dashed border-neutral-900 rounded-xl text-sm">
                                         No timers added yet.
                                     </div>
                                 )}
