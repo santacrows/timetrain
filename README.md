@@ -51,4 +51,4 @@ CONTROLS
 Update: Parses the text in the input box and generates the timer queue.
 Play/Pause: Starts or pauses the current timer.
 Reset: Stops the timer and resets the sequence to the beginning.
-Presets: Quick load sequences like "Jump Rope", "Meditation", or "Random".
+Presets: Quick load sequences like "Jump Rope" or "Meditation".
